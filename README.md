@@ -1,5 +1,10 @@
 # Ray Tracing in One Weekend
 
+A ray tracing book from [http://in1weekend.blogspot.com/2016/01/ray-tracing-in-one-weekend.html](http://in1weekend.blogspot.com/2016/01/ray-tracing-in-one-weekend.html). This reposity recorded my learning notes.
+
+![./cover.jpg](./cover.jpg)
+(The original .ppm picture took two hours to generate. 2.7 GHz Dual-Core Intel Core i5, 1200x800 resolution, 100 rays per pixel, 488 objects.)
+
 ## Chapter 1: Output an image
 
 将渲染结果存储到 .ppm 格式的文件中，使用 .ppm 文本格式来查看图像。
@@ -209,5 +214,17 @@ list[3] = new sphere(vec3(-1,0,-1), 0.5, new dielectric(1.5));
 
 ## Chapter 10: Positionable camera
 
+和电介质一样，相机也很难去 debug，所以我一般都是一点点地开发。首先，让我们有一个可调整的视场角 field of view（FOV）。它是你通过屏幕可以看到的角度。因为我们的图像不是正方形的，所以水平视场角和垂直视场角是不一样的。我通常使用垂直 FOV。我通常还把它指定为角度制的，并在构造函数内将它转换为弧度制的，只是个人品味（taste）。
+
+## Chapter 11: Defocus Blur
+
+现在，我们最后的 feature 是：*defocus blur*。注意，所有的摄影师都把这个称为“depth of field（景深）”，注意仅在朋友之间使用“defocus blur”这一术语。
+
+## Chapter 12: Where next?
+
+你现在有了一个很酷的 ray tracer！下一步做什么？
+
+1. 光源。你可以通过向光源发送 shadow rays 来显式地做这个。或者也可以通过让某些物体发光来隐式地完成。
+2. 
 
 
