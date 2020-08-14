@@ -5,6 +5,9 @@ A ray tracing book from [http://in1weekend.blogspot.com/2016/01/ray-tracing-in-o
 ![./cover.jpg](./cover.jpg)
 (The original .ppm picture took two hours to generate. 2.7 GHz Dual-Core Intel Core i5, 1200x800 resolution, 100 rays per pixel, 488 objects.)
 
+![./12.where-next-90vfov.jpg](./12.where-next-90vfov.jpg)
+(10 rays per pixel)
+
 ## Chapter 1: Output an image
 
 将渲染结果存储到 .ppm 格式的文件中，使用 .ppm 文本格式来查看图像。
@@ -224,7 +227,12 @@ list[3] = new sphere(vec3(-1,0,-1), 0.5, new dielectric(1.5));
 
 你现在有了一个很酷的 ray tracer！下一步做什么？
 
-1. 光源。你可以通过向光源发送 shadow rays 来显式地做这个。或者也可以通过让某些物体发光来隐式地完成。
-2. 
+1. 光源：你可以通过向光源发送 shadow rays 来显式地做这个，或者也可以通过让某些物体发光来隐式地完成，光线击中其他物体后，其他物体发出 scattered ray，scattered ray 如果击中发光物体，则返回发光物体的颜色，并降低该 ray 的权重。这两种方法都能行，我是少数派，支持后者。
+   ![./12.where-next-diffuse-light-material.jpg](12.where-next-diffuse-light-material.jpg)
+2. 三角形：大多数酷的模型都是以三角形的形式存储的。有关 model I/O 是最难实现的，几乎每个人都试图使用别人的代码来实现这个。
+3. 表面纹理 Surface Textures：这可以让你像墙纸一样把图像粘贴在物体上。这是非常好实现的。
+4. Solid Texture：
+5. Volumes 和 Media
+6. Parallelism：
 
 
