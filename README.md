@@ -1,6 +1,6 @@
 # Ray Tracing in One Weekend
 
-A ray tracing book from [http://in1weekend.blogspot.com/2016/01/ray-tracing-in-one-weekend.html](http://in1weekend.blogspot.com/2016/01/ray-tracing-in-one-weekend.html). This reposity recorded my learning notes.
+A ray tracing book from [http://in1weekend.blogspot.com/2016/01/ray-tracing-in-one-weekend.html](http://in1weekend.blogspot.com/2016/01/ray-tracing-in-one-weekend.html). This repository recorded my learning notes.
 
 ![./cover.jpg](./cover.jpg)
 (The original .ppm picture took two hours to generate. 2.7 GHz Dual-Core Intel Core i5, 1200x800 resolution, 100 rays per pixel, 488 objects.)
@@ -233,6 +233,6 @@ list[3] = new sphere(vec3(-1,0,-1), 0.5, new dielectric(1.5));
 3. 表面纹理 Surface Textures：这可以让你像墙纸一样把图像粘贴在物体上。这是非常好实现的。
 4. Solid Texture：
 5. Volumes 和 Media
-6. Parallelism：
+6. 并行计算（Parallelism）：因为每一个像素发出的 ray 和其他像素发出的 ray 是相互独立的，所以 ray tracing 天生就是并行的。
 
 
