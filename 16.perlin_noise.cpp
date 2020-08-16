@@ -7,6 +7,15 @@
 #include "texture.h"
 #include "float.h"
 
+hitable *two_perlin_spheres() {
+    texture *pertext = new noise_texture();
+    hitable **list = new hitable*[2];
+    list[0] = new sphere(vec3(0, -1000, 0), 1000, new lambertian(pertext));
+    list[1] = new sphere(vec3(0,     2, 0),   2, new lambertian(pertext));
+
+    return new hitable_list(list, 2);
+}
+
 hitable *two_spheres() {
     texture *checker = new checker_texture(new constant_texture(vec3(0.2, 0.3, 0.1)), new constant_texture(vec3(0.9, 0.9, 0.9)));
     int n = 50;
@@ -72,7 +81,7 @@ int main() {
     int ns = 100;  // 每个像素的采样次数
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = two_spheres();
+    hitable *world = two_perlin_spheres();
 
     vec3 lookfrom(13,2,3);
     vec3 lookat(0,0,0);
