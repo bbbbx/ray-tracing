@@ -7,6 +7,16 @@
 #include "texture.h"
 #include "float.h"
 
+hitable *two_spheres() {
+    texture *checker = new checker_texture(new constant_texture(vec3(0.2, 0.3, 0.1)), new constant_texture(vec3(0.9, 0.9, 0.9)));
+    int n = 50;
+    hitable **list = new hitable*[n+1];
+    list[0] = new sphere(vec3(0, -10, 0), 10, new lambertian(checker));
+    list[1] = new sphere(vec3(0,  10, 0), 10, new lambertian(checker));
+
+    return new hitable_list(list, 2);
+}
+
 hitable *random_scene() {
     int n = 50000;
     hitable **list = new hitable*[n+1];
@@ -62,13 +72,13 @@ int main() {
     int ns = 100;  // 每个像素的采样次数
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = random_scene();
+    hitable *world = two_spheres();
 
     vec3 lookfrom(13,2,3);
     vec3 lookat(0,0,0);
     float dist_to_focus = 10.0;
     float aperture = 0.0;
-    camera cam(lookfrom, lookat, vec3(0,1,0), 20, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 1.0);
+    camera cam(lookfrom, lookat, vec3(0,1,0), 20, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 0.0);
 
     for (int j = ny-1; j >= 0; j--) {
         std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
