@@ -4,11 +4,22 @@
 #include <iostream>
 #include <random>
 #include "sphere.h"
+#include "rect.h"
 #include "hitable_list.h"
 #include "camera.h"
 #include "material.h"
 #include "texture.h"
 #include "float.h"
+
+hitable *simple_light() {
+    texture *pertext = new noise_texture(4);
+    hitable **list = new hitable*[4];
+    list[0] = new sphere(vec3(0,-1000,0), 1000, new lambertian( pertext ));
+    list[1] = new sphere(vec3(0,    2,0),    2, new lambertian( pertext ));
+    list[2] = new sphere(vec3(0,    7,0),    2, new diffuse_light( new constant_texture(vec3(4,4,4)) ));
+    list[3] = new xy_rect(3, 5, 1, 3, -2, new diffuse_light( new constant_texture(vec3(4,4,4)) ));
+    return new hitable_list(list, 4);
+}
 
 hitable *earth() {
     int nx, ny, nn;
@@ -73,10 +84,11 @@ vec3 color(const ray& r, hitable *world, int depth) {
     if (world->hit(r, 0.001, MAXFLOAT, rec)) {
         ray scattered;
         vec3 attenuation;
+        vec3 emitted = rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
         if (depth < 50 && rec.mat_ptr->scatter(r, rec, attenuation, scattered)) {
-            return attenuation;
+            return emitted + attenuation*color(scattered, world, depth+1);
         } else {
-            return vec3(0.0, 0.0, 0.0);
+            return emitted;
         }
     } else {
         return vec3(0.0, 0.0, 0.0);
@@ -86,13 +98,13 @@ vec3 color(const ray& r, hitable *world, int depth) {
 int main() {
     int nx = 200;
     int ny = 100;
-    int ns = 100;  // 每个像素的采样次数
+    int ns = 400;  // 每个像素的采样次数
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = earth();
+    hitable *world = simple_light();
 
-    vec3 lookfrom(13,2,3);
-    vec3 lookat(0,0,0);
+    vec3 lookfrom(26,3,6);
+    vec3 lookat(0,2,0);
     float dist_to_focus = 10.0;
     float aperture = 0.0;
     camera cam(lookfrom, lookat, vec3(0,1,0), 20, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 0.0);
