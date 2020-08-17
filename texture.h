@@ -42,7 +42,7 @@ class noise_texture : public texture {
         noise_texture() {}
         noise_texture(float sc) : scale(sc) {}
         virtual vec3 value(float u, float v, const vec3& p) const {
-            return vec3(1,1,1)*noise.noise(scale * p);
+            return vec3(1,1,1) * 0.5 * (1.0 + noise.noise(scale * p));
         }
         perlin noise;
         float scale;
