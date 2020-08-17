@@ -1,7 +1,15 @@
 #ifndef SPHEREH
 #define SPHEREH
 
+#include <math.h>
 #include "hitable.h"
+
+void get_sphere_uv(const vec3& p, float& u, float& v ) {
+    float phi = atan2(p.z(), p.x());
+    float theta = asin(p.y());
+    u = 1-(phi + M_PI) / (2*M_PI);
+    v = (theta + M_PI/2) / M_PI;
+}
 
 class sphere: public hitable {
     public:
@@ -28,6 +36,7 @@ bool sphere::hit(const ray& r, float t_min, float t_max, hit_record& rec) const 
             rec.t = temp;
             rec.p = r.point_at_parameter(rec.t);
             rec.normal = (rec.p - center) / radius;
+            get_sphere_uv((rec.p-center)/radius, rec.u, rec.v);
             rec.mat_ptr = mat_ptr;
             return true;
         }
@@ -36,6 +45,7 @@ bool sphere::hit(const ray& r, float t_min, float t_max, hit_record& rec) const 
             rec.t = temp;
             rec.p = r.point_at_parameter(rec.t);
             rec.normal = (rec.p - center) / radius;
+            get_sphere_uv((rec.p-center)/radius, rec.u, rec.v);
             rec.mat_ptr = mat_ptr;
             return true;
         }

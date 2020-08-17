@@ -541,3 +541,97 @@ class noise_texture : public texture {
 
 
 ## Chapter 5: Image Texture Mapping
+
+之前我们使用了交点 p 来索引一个像大理石那样的 procedure solid texture。我们也可以读取一个图像，然后使用一个 2D 的 (u, v) 纹理坐标来索引该图像。
+
+一个在图像中使用 scaled 后的 (u, v) 的直接方法是对 u、v 四舍五入为整数，然后把它作为 (i, j) 像素。问题是，当我们修改了图像的分辨率时，我们不想还得去修改代码。因此，图形学中最通用的非官方标准之一是使用 **纹理坐标** 而不是像素坐标。纹理坐标只是图像的小数部分的某些形式。例如，对于 nx by ny 图像中的像素 **(i, j)**，对应的纹理坐标是：
+
+u = i / (nx - 1)
+v = j / (ny - 1)
+
+这只是一个小数的坐标。对于一个 hitable，我们还需要在 hit record 中返回一个 **u** 和 **v**。对于球体，纹理坐标通常基于经纬度的某些形式，即球坐标。因此，如果我们在球坐标中一个 (theta, phi)，我们只需要将 **theta** 和 **phi** scale 成小数即可。如果 theta 是从极点往下的角度，而 phi 是绕着穿过极点的轴的角度，则归一化到 [0, 1] 为：
+
+u = phi / (2*Pi)
+v = theta / Pi
+
+对于一个给定的交点，要计算该交点的 **theta** 和 **phi**，一个球心位于原点的单位球的球坐标公式是：
+
+x = cos(phi) * cos(theta)
+y = sin(phi) * cos(theta)
+z = sin(theta)
+
+我们需要对其取反。因为传某个角度的 sine 和 cosine 给可爱的 `math.h` 函数 `atan2()` 会将返回该角度，因此我们可以传入 `x` 和 `y`（cos(theta) 约掉了）：
+
+phi = atan2(y, x)
+
+`atan2` 返回的范围是 -Pi 到 Pi，因此我们需要小心这里。而 **theta** 的计算非常直白：
+
+theta = asin(z)
+
+它返回的范围是 -Pi/2 到 Pi/2。
+
+因此，对于一个球体，它的纹理坐标计算完全可以通过一个工具函数来完成，该函数的期望是那些在球心位于原点的单位球上的东西。`sphere::hit` 内部的调用是：
+
+```cpp
+    get_sphere_uv((rec.p-center)/radius, rec.u, rec.v);
+```
+
+该工具函数为：
+
+```cpp
+void get_sphere_uv(const vec3& p, float& u, float& v ) {
+    float phi = atan2(p.z(), p.x());
+    float theta = asin(p.y());
+    u = 1-(phi + M_PI) / (2*M_PI);
+    v = (theta + M_PI/2) / M_PI;
+}
+```
+
+现在我们还需要创建一个可以保存一个图像的 texture class。我打算使用我喜欢的图像工具 stb_image。它读取一个图像到一个 `unsigned char` 的大数组中。数组里的只是 packed（即 `[R1,G1,B1,R2,G2,B2,...]`） 的 RGBs，每个 RGB 的范围是 0 到 255。
+
+```cpp
+class image_texture : public texture {
+    public:
+        image_texture() {}
+        image_texture(unsigned char *pixels, int A, int B) : data(pixels), nx(A), ny(B) {}
+        virtual vec3 value(float u, float v, const vec3& p) const;
+
+        unsigned char *data;
+        int nx, ny;
+};
+
+vec3 image_texture::value(float u, float v, const vec3& p) const {
+    int i = (  u) *nx;
+    int j = (1-v) *ny - 0.001;
+
+    if (i < 0) i = 0;
+    if (j < 0) j = 0;
+    if (i > nx-1) i = nx-1;
+    if (j > ny-1) i = ny-1;
+
+    float r = int(data[3*i + 3*nx*j]  ) / 255.0;
+    float g = int(data[3*i + 3*nx*j+1]) / 255.0;
+    float b = int(data[3*i + 3*nx*j+2]) / 255.0;
+    return vec3(r, g, b);
+}
+```
+
+一个以该顺序表示的 packed array 非常标准。幸运的是，stb_image 包使其超级简单，只要在 `main.h` 中有一个 `#define` include 该头文件即可：
+
+```cpp
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+```
+
+从一个文件 `earthmap.jpg` 中读取图像（我只是从网上随机抓取了一个 earth map，任何一个标准的投影都可以达到我们的目的），然后将其赋值给一个 diffuse material，代码：
+
+```cpp
+int nx, ny, nn;
+unsigned char *tex_data = stbi_load("earthmap.jpg", &nx, &ny, &nn, 0);
+material *mat = new lambertian(new image_texture(tex_data, nx, ny));
+```
+
+所有的 colors 都是纹理，即我们可以赋任何类型的纹理给 lambertian material，而 lambertian material 不需要知道是哪种类型的纹理。
+
+要测试的话，将该 material 赋给一个球体，然后暂时削弱 main 中的 `color()` 函数，只返回 attenuation。你应该可以得到：
+

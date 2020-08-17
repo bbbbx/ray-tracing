@@ -1,3 +1,6 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <iostream>
 #include <random>
 #include "sphere.h"
@@ -6,6 +9,13 @@
 #include "material.h"
 #include "texture.h"
 #include "float.h"
+
+hitable *earth() {
+    int nx, ny, nn;
+    unsigned char *tex_data = stbi_load("earthmap.jpg", &nx, &ny, &nn, 0);
+    material *mat = new lambertian(new image_texture(tex_data, nx, ny));
+    return new sphere(vec3(0, 0, 0), 2, mat);
+}
 
 hitable *two_perlin_spheres() {
     texture *pertext = new noise_texture(4.0);
@@ -64,14 +74,12 @@ vec3 color(const ray& r, hitable *world, int depth) {
         ray scattered;
         vec3 attenuation;
         if (depth < 50 && rec.mat_ptr->scatter(r, rec, attenuation, scattered)) {
-            return attenuation*color(scattered, world, depth+1);
+            return attenuation;
         } else {
             return vec3(0.0, 0.0, 0.0);
         }
     } else {
-        vec3 unit_direction = unit_vector(r.direction());
-        float t = 0.5*(unit_direction.y() + 1.0);
-        return (1.0-t)*vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
+        return vec3(0.0, 0.0, 0.0);
     }
 }
 
@@ -81,7 +89,7 @@ int main() {
     int ns = 100;  // 每个像素的采样次数
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = two_perlin_spheres();
+    hitable *world = earth();
 
     vec3 lookfrom(13,2,3);
     vec3 lookat(0,0,0);
