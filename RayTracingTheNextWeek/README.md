@@ -85,6 +85,10 @@ class moving_sphere: public hitable {
         float time0, time1;
         float radius;
         material *mat_ptr;
+};
+
+vec3 moving_sphere::center(float time) const {
+    return center0 + ((time - time0) / (time1 - time0))*(center1 - center0);
 }
 ```
 
@@ -199,3 +203,341 @@ class moving_sphere: public hitable {
 
 
 ## Chapter 2: Bounding Volume Hierarchies
+
+这一章是目前我们的 ray tracer 中最难的一部分。我把它放到了第 2 章以便代码可以尽早地运行得更快一些，且因为本章对 `hitable` 进行了重构，这样当我添加 rectangles 和 boxs 时，我们就不需要再回过头来重构它们了。
+
+在一个 ray traver 中，ray 和物体的相交是主要的时间瓶颈，且花费的时间和物体的个数之间是线性的。但因为它在同一个模型上进行了重复的搜索，所以我们应该可以对其使用类似二叉搜索的对数搜索。因为
+
+### Chapter 3: Solid Textures
+
+因为 sine 和 cosine 的符号（即是正的还是负的）是有规律的替换的，所以我们可以通过它们来创建一个 checker（黑白相间）纹理。如果我们把三个维度上的三角函数都乘起来，则最后积的符号就形成了一个 3D checker 图案。
+
+```cpp
+class checker_texture : public texture {
+    public:
+        checker_texture() { }
+        checker_texture(texture *t0, texture *t1): even(t0), odd(t1) { }
+        virtual vec3 value(float u, float v, const vec3& p) const {
+            float sines = sin(10*p.x())*sin(10*p.y())*sin(10*p.z());
+            if (sines < 0) {
+                return odd->value(u, v, p);
+            } else {
+                return even->value(u, v, p);
+           }
+        }
+
+        texture *odd;
+        texture *even;
+};
+```
+
+## Chapter 4: Perlin Noise
+
+为了得到酷炫的纯色纹理，大多数人使用各种形式的 Perlin 噪声，这些噪声是以它们的发明者 Ken Perlin 命名的。Perlin 纹理不会返回像这样的白噪声：
+
+它返回的是模糊过的白噪声之类的东西：
+
+Perlin 噪声的一个关键点是它是可重复的：传入一个 3D 点作为输入，它总会返回相同的随机数。相邻传入点的点会返回相似的数。Perlin 噪声的另一个关键点是，它既简单且快速，通常以 hack 的方式实现。我将基于 Andrew Kensler 的描述一步步地构建这种 hack。
+
+我们可以用一个随机数的三维数组平铺所有的空间，然后在 block 中使用它们。如果重复规律是明显的，你将会得到一块一块的东西：
+
+然后使用某种 hashing 来干扰它：
+
+```cpp
+class perlin {
+    public:
+        float noise(const vec3& p) const {
+            float u = p.x() - floor(p.x());
+            float v = p.y() - floor(p.y());
+            float w = p.z() - floor(p.z());
+            int i = int(4*p.x()) & 255;
+            int j = int(4*p.y()) & 255;
+            int k = int(4*p.z()) & 255;
+            return ranfloat[perm_x[i] ^ perm_y[j] ^ perm_z[k]];
+        }
+        static float *ranfloat;
+        static int *perm_x;
+        static int *perm_y;
+        static int *perm_z;
+};
+
+static float *perlin_generate() {
+    float *p = new float[256];
+    for (int i = 0; i < 256; i++) {
+        p[i] = drand48();
+    }
+   return p;
+}
+
+void permute(int *p, int n) {
+    for (int i =n-1; i > 0; --i) {
+        int target = int(drand48()*(i+1));
+        int tmp = p[i];
+        p[i] = p[target];
+        p[target] = tmp;
+    }
+    return;
+}
+
+static int* perlin_generate_perm() {
+    int *p = new int[256];
+    for (int i = 0; i < 256; i++) {
+        p[i] = i;
+    }
+    permute(p, 256);
+    return p;
+}
+
+float *perlin::ranfloat = perlin_generate();
+int *perlin::perm_x = perlin_generate_perm();
+int *perlin::perm_y = perlin_generate_perm();
+int *perlin::perm_z = perlin_generate_perm();
+```
+
+现在我们可以创建一个传入这些 0 到 1 的浮点数的纹理，并创建一个灰色的纹理：
+
+```cpp
+class noise_texture : public texture {
+    public:
+        noise_texture() {}
+        virtual vec3 value(float u, float v, const vec3& p) const {
+            return vec3(1,1,1)*noise.noise(p);
+        }
+        perlin noise;
+};
+```
+
+然后我们可以使用它来创建一些球体：
+
+```cpp
+hitable *two_perlin_spheres() {
+    texture *pertext = new noise_texture();
+    hitable **list = new hitable*[2];
+    list[0] = new sphere(vec3(0, -1000, 0), 1000, new lambertian(pertext));
+    list[1] = new sphere(vec3(0,     2, 0),   2, new lambertian(pertext));
+
+    return new hitable_list(list, 2);
+}
+```
+
+添加 hashing 并按预期那样进行了干扰：
+
+为了使其平滑，我们可以使用线性插值：
+
+```cpp
+inline float trilinear_interp(float c[2][2][2], float u, float v, float w) {
+    float accum = 0;
+    for (int i=0; i < 2; i++) {
+        for (int j=0; j < 2; j++) {
+            for (int k=0; k < 2; k++) {
+                accum += (i*u + (1-i)*(1-u)) *
+                         (j*v + (1-j)*(1-v)) *
+                         (k*w + (1-k)*(1-w)) * c[i][j][k];
+            }
+        }
+    }
+    return accum;
+}
+
+class perlin {
+    public:
+        float noise(const vec3& p) const {
+            float u = p.x() - floor(p.x());
+            float v = p.y() - floor(p.y());
+            float w = p.z() - floor(p.z());
+
+            int i = floor(p.x());
+            int j = floor(p.y());
+            int k = floor(p.z());
+            float c[2][2][2];
+            for (int di=0; di < 2; di++) {
+                 for (int dj=0; dj < 2; dj++) {
+                      for (int dk=0; dk < 2; dk++) {
+                          c[di][dj][dk] = ranfloat[perm_x[(i+di) & 255] ^ perm_y[(j+dj) & 255] ^ perm_z[(k+dk) & 255]];
+                      }
+                 }
+            }
+            return trilinear_interp(c, u, v, w);
+        }
+}
+```
+
+然后我们就得到：
+
+好了一点，但纹理还是有一些明显的网格特征。其中一些是 **Mach bands**，这是一种已知的对颜色进行线性插值时会产生的感知伪像（perceptual artifact）。一种标准的技巧是使用一个 **hermite cubic** 来对该插值进行四舍五入：
+
+```diff
+ class perlin {
+     public:
+         float noise(const vec3& p) {
+             float u = p.x() - floor(p.x());
+             float v = p.y() - floor(p.y());
+             float w = p.z() - floor(p.z());
++            u = u*u*(3-2*u);
++            v = v*v*(3-2*v);
++            w = w*w*(3-2*w);
+             int i = floor(p.x());
+             int j = floor(p.y());
+             int k = floor(p.z());
+```
+
+得到一个更加平滑的图像：
+
+但是还是有一些低频存在。我们可以 scale 输入点使其变化得快一些：
+
+```cpp
+class noise_texture : public texture {
+    public:
+        noise_texture() {}
+        noise_texture(float sc) : scale(sc) {}
+        virtual vec3 value(float u, float v, const vec3& p) const {
+            return vec3(1,1,1)*noise.noise(scale * p);
+        }
+        perlin noise;
+        float scale;
+
+}
+```
+
+结果：
+
+
+这看起来还是存在网格块，可能是因为该图案的最小值和最大值总是准确地落在整数 x/y/z 上。Ken Perlin 的一个非常聪明的技巧是，将随机单位向量 vectors（而不仅仅是浮点数 floats）放到晶格点（lattice points）上，然后使用点乘将最小值和最大值移除该晶格。因此，首先我们需要将随机 floats 改为随机 vectors：
+
+```cpp
+vec3 *perlin::ranvec = perlin_generate();
+int *perlin::perm_x = perlin_generate_perm();
+int *perlin::perm_y = perlin_generate_perm();
+int *perlin::perm_z = perlin_generate_perm();
+```
+
+这些向量是不规则的：
+
+```cpp
+static vec3* perlin_generate() {
+    vec3 *p = new vec3[256];
+    for (int i = 0; i < 256; i++) {
+        p[i] = unit_vector(vec3(-1 + 2*drand48(), -1 + 2*drand48(), -1 + 2*drand48()));
+    }
+    return p;
+}
+```
+
+现在的 Perlin class 是：
+
+```cpp
+class perlin {
+    public:
+        float noise(const vec3& p) {
+            float u = p.x() - floor(p.x());
+            float v = p.y() - floor(p.y());
+            float w = p.z() - floor(p.z());
+
+            int i = floor(p.x());
+            int j = floor(p.y());
+            int k = floor(p.z());
+
+            vec3 c[2][2][2];
+            for (int di=0; di < 2; di++) {
+                for (int dj=0; dj < 2; dj++) {
+                    for (int dk=0; dk < 2; dk++) {
+                        c[di][dj][dk] = ranvec[perm_x[(i+di) & 255] ^ perm_y[(i+di) & 255] ^ perm_x[(i+di) & 255]];
+                    }
+                }
+            }
+            return perlin_interp(c, u, v, w);
+        }
+
+        static vec3 *ranvec;
+        static int *perm_x;
+        static int *perm_y;
+        static int *perm_z;
+};
+```
+
+而插值变得更加复杂了：
+
+```cpp
+inline float perlin_interp(vec3 c[2][2][2], float u, float v, float w) {
+    float uu = u*u*(3-2*u);
+    float vv = v*v*(3-2*v);
+    float ww = w*w*(3-2*w);
+
+    float accum = 0;
+    for (int i=0; i < 2; i++) {
+        for (int j=0; j < 2; j++) {
+            for (int k=0; k < 2; k++) {
+                vec3 weight_v(u-i, v-j, w-k);
+                accum += (i*uu + (1-i)*(1-uu)) *
+                         (j*vv + (1-j)*(1-vv)) *
+                         (k*ww + (1-k)*(1-ww)) *
+                         dot(c[i][j][k], weight_v);
+            }
+        }
+    }
+    return accum;
+}
+```
+
+perlin interpolation 的输出可能是负值。该负值会传入我们的 gamma 函数中的 `sqrt()` 函数，结果然后返回 `NaN`s。我们可以把 perlin interpolation 的输出转换会 0 到 1 之间：
+
+```diff
+ class noise_texture : public texture {
+     public:
+         noise_texture() {}
+         noise_texture(float sc) : scale(sc) {}
+         virtual vec3 value(float u, float v, const vec3& p) const {
+-            return vec3(1,1,1)*noise.noise(scale * p);
++            return vec3(1,1,1) * 0.5 * (1.0 + noise.noise(scale * p));
+         }
+         perlin noise;
+         float scale;
+ };
+```
+
+最后结果看起来更加合理了：
+
+
+通常来说，会使用多个频率的噪声相加得到一个复合噪声。这通常被称为 **turbulence**，是重复调用 noise 的总和：
+
+```cpp
+float turb(const vec3& p, int depth=7) const {
+    float accum = 0;
+    vec3 temp_p = p;
+    float weight = 1.0;
+    for (int i = 0; i < depth; i++) {
+        accum += weight * noise(temp_p);
+        weight *= 0.5;
+        temp_p *= 2;
+    }
+    return fabs(accum);
+}
+```
+
+其中的 `fabs()` 是 `math.h` 中返回绝对值的函数。
+
+如果直接使用 turbulence 的话，会产生一种伪装网状的外观（camouflage netting appearance）：
+
+
+我们通常间接使用 turbulence。例如，对 solid textures 的 “Hello World” 伪纹理使用 turbulence 就得到了一个简单的类似大理石的纹理。基本思想是使颜色和类似 sine 函数的东西成正比，然后使用 turbulence 来调整相位（它会移动 sin(x) 的 x），从而生成波动的条纹。注释掉噪声和 turbulence，就可以得到一个类似大理石的效果：
+
+```cpp
+class noise_texture : public texture {
+    public:
+        noise_texture() {}
+        noise_texture(float sc) : scale(sc) {}
+        virtual vec3 value(float u, float v, cosnt vec3& p) const {
+            // return vec3(1,1,1) * 0.5 * (1.0 + noise.turb(scale * p))
+            // return vec3(1,1,1) * noise.turb(scale * p)
+            return vec3(1,1,1) * 0.5 * (1 + sin(scale*p.z() + 10*noise.turb(p)));
+        }
+
+        perlin noise;
+        float scale;
+};
+```
+
+结果：
+
+
+## Chapter 5: Image Texture Mapping
