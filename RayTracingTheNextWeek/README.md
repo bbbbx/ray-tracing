@@ -208,7 +208,7 @@ vec3 moving_sphere::center(float time) const {
 
 在一个 ray traver 中，ray 和物体的相交是主要的时间瓶颈，且花费的时间和物体的个数之间是线性的。但因为它在同一个模型上进行了重复的搜索，所以我们应该可以对其使用类似二叉搜索的对数搜索。因为
 
-### Chapter 3: Solid Textures
+## Chapter 3: Solid Textures
 
 因为 sine 和 cosine 的符号（即是正的还是负的）是有规律的替换的，所以我们可以通过它们来创建一个 checker（黑白相间）纹理。如果我们把三个维度上的三角函数都乘起来，则最后积的符号就形成了一个 3D checker 图案。
 
@@ -635,3 +635,290 @@ material *mat = new lambertian(new image_texture(tex_data, nx, ny));
 
 要测试的话，将该 material 赋给一个球体，然后暂时削弱 main 中的 `color()` 函数，只返回 attenuation。你应该可以得到：
 
+
+## Chapter 6: Rectangles and Lights
+
+首先，让我们创建一种发光的 material。我们需要添加一个 emitted 函数（我们也可以把它添加到 `hit_record` 中，这是一种设计风格的问题）。就像 background 一样，发光 material 只是告诉 ray 它的颜色是什么，且不进行反射，非常简单：
+
+```cpp
+class diffuse_light : public material {
+    public:
+        diffuse_light(texture *a) : emit(a) {}
+        virtual bool scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered) const { return false; }
+        virtual vec3 emitted(float u, float v, const vec3& p) const { return emit->value(u, v, p); }
+
+        texture *emit;
+};
+```
+
+且我不需要让所有非发光的 material 都实现 `emitted()`，我有一个返回黑色的 base class：
+
+```cpp
+class material {
+    public:
+        virtual bool scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered) const = 0;
+        virtual vec3 emitted(float u, float v, const vec3& p) const { return vec3(0, 0, 0); }
+};
+```
+
+下一步，让我们在我们的 `color()` 函数中使背景色为黑色，并且加上 emitted：
+
+```cpp
+vec3 color(const ray& r, hitable *world, int depth) {
+    hit_record rec;
+    if (world->hit(r, 0.001, MAXFLOAT, rec)) {
+        ray scattered;
+        vec3 attenuation;
+        vec3 emitted = rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
+        if (depth < 50 && rec.mat_ptr->scatter(r, rec, attenuation, scattered)) {
+            return emitted + attenuation*color(scattered, world, depth+1);
+        } else {
+            return emitted;
+        }
+    } else {
+        return vec3(0.0, 0.0, 0.0);
+    }
+}
+```
+
+现在，让我们来制作一些矩形。矩形通常方便于人造环境的建模。我喜欢制作轴对称的矩形，因为它们简单（我们将会进行 instancing，以便后续可以对它们进行旋转）。
+
+首先，这里的矩形是一个 xy 平面。这样的平面由它的 z 值来定义。例如，z=k。一个轴对称矩形由线 x=x0、x=x1、y=y0、y=y1 定义。
+
+为了确定一条 ray 是否击中了一个这样的矩形，我们首先需要确定 ray 在平面上的位置。回想一下，一条 ray **p**(t)=**a**+t***b** 的 z 分量由 z(t)=az+t*bz 定义。整理每一项，我们就可以解出当 z=k 时，对应的 t 是多少。
+
+t = (k-az)/bz
+
+一旦我们得到了 t，我们就可以将它插入到 x 和 y 的方程中：
+
+x = ax + t*bx
+y = ay + t*by
+
+如果 x0 < x < x1 且 y0 < y < y1，则该 ray 会击中该矩形。
+
+因此 xy_rect class 为：
+
+```cpp
+class xy_rect : public hitable {
+    public:
+        xy_rect() {}
+        xy_rect(float _x0, float _x1, float _y0, float _y1, float _k, material *mat) :
+            x0(_x0), x1(_x1), y0(_y0), y1(_y1), k(_k), mp(mat) {};
+        virtual bool hit(const ray& r, float t0, float t1, hit_record& rec) const;
+        virtual bool bounding_box(float t0, float t1, aabb& box) const {
+            box = aabb(vec3(x0, y0, k-0.0001), vec3(x1, y1, k+0.0001));
+            return true;
+        }
+
+        material *mp;
+        float x0, x1, y0, y1, k;
+};
+```
+
+它的 hit 函数是：
+
+```cpp
+bool xy_rect::hit(const ray& r, float t0, float t1, hit_record& rec) const {
+    float t = (k-r.origin().z()) / r.direction().z();
+    if (t < t0 || t > t1) {
+        return false;
+    }
+
+    float x = r.origin().x() + t*r.direction().x();
+    float y = r.origin().y() + t*r.direction().y();
+    if (x < x0 || x > x1 || y < y0 || y > y1) {
+        return false;
+    }
+
+    rec.u = (x-x0)/(x1-x0);
+    rec.v = (y-y0)/(y1-y0);
+    rec.t = t;
+    rec.mat_ptr = mp;
+    rec.p = r.point_at_parameter(t);
+    rec.normal = vec3(0, 0, 1);
+    return true;
+}
+```
+
+如果我们设立一个矩形作为光源：
+
+```cpp
+hitable *simple_light() {
+    texture *pertext = new noise_texture(4);
+    hitable **list = new hitable*[4];
+    list[0] = new sphere(vec3(0,-1000,0), 1000, new lambertian( pertext ));
+    list[1] = new sphere(vec3(0,    2,0),    2, new lambertian( pertext ));
+    list[2] = new sphere(vec3(0,    7,0),    2, new diffuse_light( new constant_texture(vec3(4,4,4)) ));
+    list[3] = new xy_rect(3, 5, 1, 3, -2, new diffuse_light( new constant_texture(vec3(4,4,4)) ));
+    return new hitable_list(list, 4);
+}
+```
+
+我们就会得到：
+
+
+注意，光的颜色大于 (1,1,1)。这使得它足够照亮其他东西。
+
+加入一些球体光源：
+
+
+现在，让我们添加另外两个 axes 和著名的 Cornell Box。
+
+下面是 yz 平面和 xz 平面。
+
+```cpp
+class xz_rect : public hitable {
+    public:
+        xz_rect() {}
+        xz_rect(float _x0, float _x1, float _z0, float _z1, float _k, material *mat) : x0(_x0), x1(_x1), z0(_z0), z1(_z1), k(_k), mp(mat) {};
+        virtual bool hit(const ray& r, float t0, float t1, hit_record& rec) const;
+        virtual bool bounding_box(float t0, float t1, aabb& box) const {
+            box = aabb(vec3(x0, k-0.0001, z0), vec3(x1, k+0.0001, z1));
+            return true;
+        }
+
+        material *mp;
+        float x0, x1, z0, z1, k;
+};
+
+class yz_rect : public hitable {
+    public:
+        yz_rect() {}
+        yz_rect(float _y0, float _y1, float _z0, float _z1, float _k, material *mat) : y0(_y0), y1(_y1), z0(_z0), z1(_z1), k(_k), mp(mat) {};
+        virtual bool hit(const ray& r, float t0, float t1, hit_record& rec) const;
+        virtual bool bounding_box(float t0, float t1, aabb& box) const {
+            box = aabb(vec3(k-0.0001, y0, z0), vec3(k+0.0001, y1, z1));
+            return true;
+        }
+
+        material *mp;
+        float y0, y1, z0, z1, k;
+};
+```
+
+以及它们的 hit 函数：
+
+```cpp
+bool xz_rect::hit(const ray& r, float t0, float t1, hit_record& rec) const {
+    float t = (k-r.origin().y()) / r.direction().y();
+    if (t < t0 || t > t1) {
+        return false;
+    }
+    float x = r.origin().x() + t*r.direction().x();
+    float z = r.origin().z() + t*r.direction().z();
+    if (x < x0 || x > x1 || z < z0 || z > z1) {
+        return false;
+    }
+
+    rec.u = (x-x0)/(x1-x0);
+    rec.u = (z-z0)/(z1-z0);
+    rec.t = t;
+    rec.mat_ptr = mp;
+    rec.p = r.point_at_parameter(t);
+    rec.normal = vec3(0, 1, 0);
+    return true;
+}
+
+bool yz_rect::hit(const ray& r, float t0, float t1, hit_record& rec) const {
+    float t = (k-r.origin().x()) / r.direction().x();
+    if (t < t0 || t > t1) {
+        return false;
+    }
+    float y = r.origin().y() + t*r.direction().y();
+    float z = r.origin().z() + t*r.direction().z();
+    if (y < y0 || y > y1 || z < z0 || z > z1) {
+        return false;
+    }
+
+    rec.u = (y-y0)/(y1-y0);
+    rec.u = (z-z0)/(z1-z0);
+    rec.t = t;
+    rec.mat_ptr = mp;
+    rec.p = r.point_at_parameter(t);
+    rec.normal = vec3(1, 0, 0);
+    return true;
+}
+```
+
+让我们制作 5 面墙和该 box 的一个光源：
+
+```cpp
+hitable *cornell_box() {
+    hitable **list = new hitable*[6];
+    int i = 0;
+    material *red = new lambertian(new constant_texture(vec3(0.65, 0.05, 0.05)) );
+    material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)) );
+    material *green = new lambertian(new constant_texture(vec3(0.12, 0.45, 0.15)) );
+    material *light = new diffuse_light(new constant_texture(vec3(15, 15, 15)) );
+    list[i++] = new yz_rect(0, 555, 0, 555, 555, green);  // 左墙
+    list[i++] = new yz_rect(0, 555, 0, 555, 0, red);  // 右墙
+    list[i++] = new xz_rect(213, 343, 227, 332, 554, light);  // 顶灯
+    list[i++] = new xz_rect(0, 555, 0, 555, 0, white);  // 底
+    list[i++] = new xy_rect(0, 555, 0, 555, 555, white);  // 背
+    return new hitable_list(list, i);
+}
+```
+
+然后是视角信息：
+
+```cpp
+    vec3 lookfrom(278, 278, -800);
+    vec3 lookat(278, 278, 0);
+    float dist_to_focus = 10.0;
+    float aperture = 0.0;
+    float vfov = 40.0;
+
+    camera cam(lookfrom, lookat, vec3(0,1,0), vfov, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 1.0);
+```
+
+结果：
+
+
+噪声非常多，因为光源太小了。但是，为什么左边的和背面的墙不见了？因为它们面向的方向错了，我们需要面向法线。让我们创建一个 hitable，该 hitable 什么也不做，只是保存了另外一个 hitable，并反转了它的法线：
+
+```cpp
+class flip_normals : public hitable {
+    public:
+        flip_normals() {}
+        flip_normals(hitable *p) : ptr(p) {}
+        virtual bool hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
+            if (ptr->hit(r, t_min, t_max, rec)) {
+                rec.normal = -rec.normal;
+                return true;
+            }
+            return false;
+        }
+        virtual bool bounding_box(float t0, float t1, aabb& box) const {
+            return ptr->bounding_box(t0, t1, box);
+        }
+
+        hitable *ptr;
+};
+```
+
+然后创建 Cornell box：
+
+```diff
+ hitable *cornell_box() {
+     hitable **list = new hitable*[6];
+     int i = 0;
+     material *red = new lambertian(new constant_texture(vec3(0.65, 0.05, 0.05)) );
+     material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)) );
+     material *green = new lambertian(new constant_texture(vec3(0.12, 0.45, 0.15)) );
+     material *light = new diffuse_light(new constant_texture(vec3(15, 15, 15)) );
+-    list[i++] = new yz_rect(0, 555, 0, 555, 555, green);  // 左墙
++    list[i++] = new flip_normals(new yz_rect(0, 555, 0, 555, 555, green));  // 左墙
+     list[i++] = new yz_rect(0, 555, 0, 555, 0, red);  // 右墙
+     list[i++] = new xz_rect(213, 343, 227, 332, 554, light);  // 顶灯
++    list[i++] = new flip_normals(new xz_rect(0, 555, 0, 555, 555, white));  // 顶墙
+     list[i++] = new xz_rect(0, 555, 0, 555, 0, white);  // 底
+-    list[i++] = new xy_rect(0, 555, 0, 555, 555, white);  // 背
++    list[i++] = new flip_normals(new xy_rect(0, 555, 0, 555, 555, white));  // 背
+     return new hitable_list(list, i);
+ }
+```
+
+结果：
+
+
+## Chapter 7: Instances
