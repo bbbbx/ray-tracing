@@ -11,6 +11,21 @@
 #include "texture.h"
 #include "float.h"
 
+hitable *cornell_box() {
+    hitable **list = new hitable*[6];
+    int i = 0;
+    material *red = new lambertian(new constant_texture(vec3(0.65, 0.05, 0.05)) );
+    material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)) );
+    material *green = new lambertian(new constant_texture(vec3(0.12, 0.45, 0.15)) );
+    material *light = new diffuse_light(new constant_texture(vec3(15, 15, 15)) );
+    list[i++] = new yz_rect(0, 555, 0, 555, 555, green);  // 右墙
+    list[i++] = new yz_rect(0, 555, 0, 555, 0, red);  // 左墙
+    list[i++] = new xz_rect(213, 343, 227, 332, 554, light);  // 顶灯
+    list[i++] = new xz_rect(0, 555, 0, 555, 0, white);  // 底
+    list[i++] = new xy_rect(0, 555, 0, 555, 555, white);  // 背
+    return new hitable_list(list, i);
+}
+
 hitable *simple_light() {
     texture *pertext = new noise_texture(4);
     hitable **list = new hitable*[4];
@@ -101,13 +116,15 @@ int main() {
     int ns = 400;  // 每个像素的采样次数
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = simple_light();
+    hitable *world = cornell_box();
 
-    vec3 lookfrom(26,3,6);
-    vec3 lookat(0,2,0);
+    vec3 lookfrom(278, 278, -800);
+    vec3 lookat(278, 278, 0);
     float dist_to_focus = 10.0;
     float aperture = 0.0;
-    camera cam(lookfrom, lookat, vec3(0,1,0), 20, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 0.0);
+    float vfov = 40.0;
+
+    camera cam(lookfrom, lookat, vec3(0,1,0), vfov, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 1.0);
 
     for (int j = ny-1; j >= 0; j--) {
         std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
