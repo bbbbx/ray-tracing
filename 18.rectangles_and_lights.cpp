@@ -18,11 +18,12 @@ hitable *cornell_box() {
     material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)) );
     material *green = new lambertian(new constant_texture(vec3(0.12, 0.45, 0.15)) );
     material *light = new diffuse_light(new constant_texture(vec3(15, 15, 15)) );
-    list[i++] = new yz_rect(0, 555, 0, 555, 555, green);  // 右墙
-    list[i++] = new yz_rect(0, 555, 0, 555, 0, red);  // 左墙
+    list[i++] = new flip_normals(new yz_rect(0, 555, 0, 555, 555, green));  // 左墙
+    list[i++] = new yz_rect(0, 555, 0, 555, 0, red);  // 右墙
     list[i++] = new xz_rect(213, 343, 227, 332, 554, light);  // 顶灯
+    list[i++] = new flip_normals(new xz_rect(0, 555, 0, 555, 555, white));  // 顶墙
     list[i++] = new xz_rect(0, 555, 0, 555, 0, white);  // 底
-    list[i++] = new xy_rect(0, 555, 0, 555, 555, white);  // 背
+    list[i++] = new flip_normals(new xy_rect(0, 555, 0, 555, 555, white));  // 背
     return new hitable_list(list, i);
 }
 
