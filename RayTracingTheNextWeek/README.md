@@ -547,17 +547,21 @@ class noise_texture : public texture {
 一个在图像中使用 scaled 后的 (u, v) 的直接方法是对 u、v 四舍五入为整数，然后把它作为 (i, j) 像素。问题是，当我们修改了图像的分辨率时，我们不想还得去修改代码。因此，图形学中最通用的非官方标准之一是使用 **纹理坐标** 而不是像素坐标。纹理坐标只是图像的小数部分的某些形式。例如，对于 nx by ny 图像中的像素 **(i, j)**，对应的纹理坐标是：
 
 u = i / (nx - 1)
+
 v = j / (ny - 1)
 
 这只是一个小数的坐标。对于一个 hitable，我们还需要在 hit record 中返回一个 **u** 和 **v**。对于球体，纹理坐标通常基于经纬度的某些形式，即球坐标。因此，如果我们在球坐标中一个 (theta, phi)，我们只需要将 **theta** 和 **phi** scale 成小数即可。如果 theta 是从极点往下的角度，而 phi 是绕着穿过极点的轴的角度，则归一化到 [0, 1] 为：
 
 u = phi / (2*Pi)
+
 v = theta / Pi
 
 对于一个给定的交点，要计算该交点的 **theta** 和 **phi**，一个球心位于原点的单位球的球坐标公式是：
 
 x = cos(phi) * cos(theta)
+
 y = sin(phi) * cos(theta)
+
 z = sin(theta)
 
 我们需要对其取反。因为传某个角度的 sine 和 cosine 给可爱的 `math.h` 函数 `atan2()` 会将返回该角度，因此我们可以传入 `x` 和 `y`（cos(theta) 约掉了）：
@@ -922,3 +926,204 @@ class flip_normals : public hitable {
 
 
 ## Chapter 7: Instances
+
+Cornell Box 通常由两个 blocks 在里面。这两个 blocks 相对墙面有一定的旋转。首先，让我们创建一个轴对称的 block primitive，它里面有 6 个 rectangles：
+
+```cpp
+class box : public hitable {
+    public:
+        box() {}
+        box(const vec3& p0, const vec3& p1, material *ptr);
+        virtual bool hit(const ray& r, float t_min, float t_max, hit_record& rec) const;
+        virtual bool bounding_box(float t0, float t1, aabb& box) const {
+            box = aabb(pmin, pmax);
+            return true;
+        }
+
+        vec3 pmin, pmax;
+        hitable *list_ptr;
+};
+
+box::box(const vec3& p0, const vec3& p1, material *ptr) {
+    pmin = p0;
+    pmax = p1;
+    hitable **list = new hitable*[6];
+    list[0] = new xy_rect(p0.x(), p1.x(), p0.y(), p1.y(), p1.z(), ptr);
+    list[1] = new flip_normals(new xy_rect(p0.x(), p1.x(), p0.y(), p1.y(), p0.z(), ptr));
+    list[2] = new xz_rect(p0.x(), p1.x(), p0.z(), p1.z(), p1.y(), ptr);
+    list[3] = new flip_normals(new xz_rect(p0.x(), p1.x(), p0.z(), p1.z(), p0.y(), ptr));
+    list[4] = new yz_rect(p0.y(), p1.y(), p0.z(), p1.z(), p1.x(), ptr);
+    list[5] = new flip_normals(new yz_rect(p0.y(), p1.y(), p0.z(), p1.z(), p0.x(), ptr));
+    list_ptr = new hitable_list(list, 6);
+}
+
+bool box::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
+    return list_ptr->hit(r, t_min, t_max, rec);
+}
+```
+
+现在我们可以添加两个 blocks 了（未旋转的）：
+
+```cpp
+list[i++] = new box(vec3(130, 0, 65), vec3(295, 165, 230), white);
+list[i++] = new box(vec3(265, 0, 295), vec3(430, 330, 460), white);
+```
+
+结果：
+
+
+现在我们有了 boxes，我们需要稍微旋转一下它们，使它们和 *真实的* Cornell box 一样。在 ray tracing 中，这通常用一个 **instance** 来完成。一个 instance 是一个以某种方式被移动过或被旋转过的 geometric primitive。这在 ray tracing 中特别简单，因为我们不会移动任何物体，取而代之的是，我们将 rays 朝相反的方向移动。例如，考虑一个 **translation**（通常称为一个 **move**），我们可以获取位于原点的粉色 box，然后对它的所有 x 分量都加 2，或者我们也可以（在 ray tracing 中我们通常都是这么做的）就让该 box 位于原点，但是在它的 hit 方法中对传入的 ray 的原点的 x 分量减去 2。
+
+你可以认为这是一个 move，也可以认为这是一个对坐标系的改变。可以 move 任何底层的 hitable 是一个 `translate` instance。
+
+```cpp
+class translate : public hitable {
+    public:
+        translate(hitable *p, const vec3& displacement) : ptr(p), offset(displacement) {}
+        virtual bool hit(const ray& r, float t_min, float t_max, hit_record& rec) const;
+        virtual bool bounding_box(float t0, float t1, aabb* box) const;
+
+        hitable *ptr;
+        vec3 offset;
+};
+
+bool translate::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
+    ray moved_r(r.origin() - offset, r.direction(), r.time());
+    if (ptr->hit(moved_r, t_min, t_max, rec)) {
+        rec.p += offset;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool translate::bounding_box(float t0, float t1, aabb* box) const {
+    if (ptr->bounding_box(t0, t1, box)) {
+        box = aabb(box.min() + offset, box.max() + offset);
+        return true;
+    } else {
+        return false;
+    }
+}
+```
+
+Rotation 则不太容易理解，用公式也很难说明。在图形学中，一个对旋转的常见策略是把总的旋转分为绕 x 轴、y 轴、z 轴旋转。这些分量的旋转在某种意义上是轴对称的。首先，让我们绕 z 轴旋转。绕 z 轴旋转只会改动 x 和 y，且旋转量不依赖于 z 值。
+
+
+这里涉及到一些基本的三角函数，这些三角函数的公式在这里不再赘述，你可以在任意一本图形学讲义上找到这些公式的解释。绕 z 轴逆时针旋转的结果：
+
+x' = cos(theta)\*x - sin(theta)\*y
+
+y' = sin(theta)\*x + cos(theta)\*y
+
+该公式对任何角度都适用，不需要处理类似那样象限的东西。逆变换是相反的几何操作：旋转 -theta。回想一下 cos(theta) = cos(-theta) 和 sin(theta) = -sine(theta)，因此逆变换的公式非常简单。
+
+类似地，绕 y 轴旋转（我们像对 Cornell box 内的 block 做的操作）的公式是：
+
+x' = cos(theta)\*x + sin(theta)\*z
+
+z' = -sin(theta)\*x + cos(theta)\*z
+
+而绕 x 轴旋转的公式是：
+
+y' = cos(theta)\*y - sin(theta)\*z
+
+z' = sin(theta)\*z + cos(theta)\*z
+
+不像 translations 那样，旋转还需要改变表明的法线向量，所以，如果我们 hit 了，我们还需要变换法线的方向。幸运的是，对于旋转法线，这些公式也同样适用。如果你想要添加 scale，就更加复杂了。见 [​www.in1weekend.com​](​www.in1weekend.com​) 内对 scale 操作的链接。
+
+下面是一个 y-rotation 的 class：
+
+```cpp
+class rotate_y : public hitable {
+    public:
+        rotate_y(hitable *p, float angle);
+        virtual bool hit(const ray& r, float t_min, float t_max, hit_record& rec) const;
+        virtual bool bounding_box(float t0, float t1, aabb& box) const {
+            box = bbox;
+            return hasbox;
+        }
+
+        hitable *ptr;
+        float sin_theta;
+        float cos_theta;
+        bool hasbox;
+        aabb bbox;
+};
+```
+
+它的构造函数：
+
+```cpp
+rotate_y::rotate_y(hitable *p, float angle) : ptr(p) {
+    float radians = (M_PI / 180.) * angle;
+    sin_theta = sin(radians);
+    cos_theta = cos(radians);
+    hasbox = ptr->bounding_box(0, 1, bbox);
+    vec3 min(FLT_MAX, FLT_MAX, FLT_MAX);
+    vec3 max(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            for (int k = 0; k < 2; k++) {
+                float x = i*bbox.max().x() + (1-i)*bbox.min().x();
+                float y = j*bbox.max().y() + (1-j)*bbox.min().y();
+                float z = k*bbox.max().z() + (1-k)*bbox.min().z();
+                float newx = cos_theta*x + sin_theta*z;
+                float newz = -sin_theta*x + cos_theta*z;
+                vec3 tester(newx, y, newz);
+                for (int c = 0; c < 3; c++) {
+                    if (tester[c] > max[c]) {
+                        max[c] = tester[c];
+                    }
+                    if (tester[c] < min[c]) {
+                        min[c] = tester[c];
+                    }
+                }
+            }
+        }
+    }
+    bbox = aabb(min, max);
+}
+```
+
+它的 hit 函数：
+
+```cpp
+bool rotate_y::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
+    vec3 origin = r.origin();
+    vec3 direction = r.direction();
+    origin[0] = cos_theta*r.origin()[0] - sin_theta*r.origin()[2];
+    origin[2] = sin_theta*r.origin()[0] + cos_theta*r.origin()[2];
+    direction[0] = cos_theta*r.direction()[0] - sin_theta*r.direction()[2];
+    direction[2] = sin_theta*r.direction()[0] + cos_theta*r.direction()[2];
+    ray rotated_r(origin, direction, r.time());
+    if (ptr->hit(rotated_r, t_min, t_max, rec)) {
+        vec3 p = rec.p;
+        vec3 normal = rec.normal;
+        p[0] = cos_theta*rec.p[0] + sin_theta*rec.p[2];
+        p[2] = -sin_theta*rec.p[0] + cos_theta*rec.p[2];
+        normal[0] = cos_theta*rec.normal[0] + sin_theta*rec.normal[2];
+        normal[2] = -sin_theta*rec.normal[0] + cos_theta*rec.normal[2];
+        rec.p = p;
+        rec.normal = normal;
+        return true;
+    } else {
+        return false;
+    }
+}
+```
+
+然后修改 Cornell box：
+
+```diff
+-    list[i++] = new box(vec3(130, 0, 65), vec3(295, 165, 230), white);
+-    list[i++] = new box(vec3(265, 0, 295), vec3(430, 330, 460), white);
++    list[i++] = new translate(new rotate_y(new box(vec3(0, 0, 0), vec3(165, 165, 165), white), -18), vec3(130, 0, 65));
++    list[i++] = new translate(new rotate_y(new box(vec3(0, 0, 0), vec3(165, 330, 165), white), 15), vec3(265, 0, 295));
+```
+
+结果：
+
+
+## Chapter 8: Volumes
+
